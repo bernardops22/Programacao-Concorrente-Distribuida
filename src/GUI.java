@@ -50,14 +50,19 @@ public class GUI {
         JTextField lengthField = new JTextField("10");
         information.add(lengthField);
 
+        JTextArea resultsField = new JTextArea(10,100);
+        resultsField.setEditable(false);
+        resultsField.setLineWrap(true);
+        resultsField.setWrapStyleWord(true);
+        resultsField.setText("Respostas aparecerão aqui...");
+        JScrollPane resultsFieldScroll = new JScrollPane(resultsField);
+        results.add(resultsFieldScroll);
+
         JButton consultButton = new JButton("Consultar");
+        consultButton.addActionListener(e -> resultsField.setText(indexField.getText()+":"+lengthField.getText()));
         information.add(consultButton);
 
         information.add(Box.createHorizontalStrut(1));
-
-        JTextArea resultsField = new JTextArea(10,100);
-        resultsField.setText("Respostas aparecerão aqui...");
-        results.add(resultsField);
 
         frame.add(information);
         frame.add(results, BorderLayout.SOUTH);
@@ -67,5 +72,4 @@ public class GUI {
         GUI window = new GUI();
         window.open();
     }
-
 }
