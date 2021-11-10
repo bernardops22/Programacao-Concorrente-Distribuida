@@ -1,11 +1,13 @@
+package client;
+
 import javax.swing.*;
 import java.awt.*;
 
-public class GUI {
+public class Client {
 
     private final JFrame frame;
 
-    public GUI(){
+    public Client(){
         frame = new JFrame("Client");
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setResizable(false);
@@ -69,7 +71,7 @@ public class GUI {
     }
 
     public static void main(String[] args){
-        GUI window = new GUI();
+        Client window = new Client();
         window.open();
     }
 }
