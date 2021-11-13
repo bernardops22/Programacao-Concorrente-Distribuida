@@ -45,7 +45,7 @@ public class StorageNode {
             connectToTheDirectory();
             registerInTheDirectory();
             getFileContent();
-            sendMessages();
+            userInput();
         }catch (IOException e){}
         finally{
             socket.close();
@@ -67,7 +67,7 @@ public class StorageNode {
         System.err.println("Sending to directory: INS " + socket.getLocalAddress().getHostAddress() + " " + receiverPort);
     }
 
-    private void getFileContent() {
+    private void getFileContent() throws IOException {
         if(path!=null)
             try{
                 byte[] fileContentsTemp = Files.readAllBytes(new File(path).toPath());
@@ -83,26 +83,33 @@ public class StorageNode {
         else getFromOtherNodes();
     }
 
-    public void getFromOtherNodes() {
-        System.err.println("Got file info from other nodes.");
+    public void getFromOtherNodes() throws IOException {
+        System.err.println("Querying directory for other nodes...");
+        sendMessage("nodes");
     }
 
-    private void sendMessages() throws IOException {
+    private void userInput() throws IOException  {
         Scanner scanner = new Scanner(System.in);
-        while(true) {
-            String line = scanner.nextLine();
-            if (line.split("\\s")[0].equals("ERROR")) {
-                injectError(line.split("\\s+")[1]);
-            }
-            else if(line.equals("nodes")){
-                out.println("nodes");
-                System.err.println(in.readLine());
-            }
-            else if(line.equals("exit") || line.equals("EXIT")){
-                break;
-            }
-            else System.err.println("Command not recognized.");
+        while(true)
+            sendMessage(scanner.nextLine());
+    }
+
+    private void sendMessage(String line) throws IOException {
+        if(line.split("\\s")[0].equals("ERROR"))
+            injectError(line.split("\\s+")[1]);
+        else if(line.equals("nodes")) {
+            out.println("nodes");
+            System.err.println("Got answer: "+ in.readLine());
+            downloadThread();
         }
+        else if(line.equals("exit") || line.equals("EXIT")){
+            return;
+        }
+        else System.err.println("Command not recognized.");
+    }
+
+    private void downloadThread() {
+        System.err.println("Lauching download thread: ");
     }
 
     private void injectError(String position){
