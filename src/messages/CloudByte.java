@@ -62,7 +62,7 @@ public class CloudByte implements Serializable {
 	}
 	@Override
 	public String toString() {
-		return "CloudByte [value=" + getValue() + "]"+(!isParityOk()?"->ERROR":"");
+		return "CloudByte [value=" + getValue() + "]"+(!isParityOk()?" Parity NOK":" Parity OK");
 	}
 	private static byte countOnes(byte value){
 		byte count=0;
