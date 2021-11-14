@@ -2,6 +2,7 @@ package storage_nodes;
 
 import java.io.*;
 import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.file.Files;
@@ -16,6 +17,7 @@ public class StorageNode {
 
     private InetAddress address;
     private Socket socket;
+    private ServerSocket serverSocket;
     private BufferedReader in;
     private PrintWriter out;
 
@@ -55,6 +57,7 @@ public class StorageNode {
     private void connectToTheDirectory() throws IOException {
         address = InetAddress.getByName(serverAddress);
         socket = new Socket(address,senderPort);
+        serverSocket = new ServerSocket(receiverPort);
         in = new BufferedReader(new InputStreamReader(
                 socket.getInputStream()));
         out = new PrintWriter(new BufferedWriter(
@@ -63,8 +66,8 @@ public class StorageNode {
     }
 
     private void registerInTheDirectory() throws UnknownHostException {
-        out.println("INS " + socket.getLocalAddress().getHostAddress() + " " + receiverPort);
-        System.err.println("Sending to directory: INS " + socket.getLocalAddress().getHostAddress() + " " + receiverPort);
+        out.println("INS " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
+        System.err.println("Sending to directory: INS " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
     }
 
     private void getFileContent() throws IOException {
