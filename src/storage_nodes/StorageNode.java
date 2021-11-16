@@ -12,16 +12,15 @@ import messages.CloudByte;
 
 public class StorageNode {
 
-    private String serverAddress, path;
-    private int senderPort, receiverPort;
+    private final String serverAddress, path;
+    private final int senderPort, receiverPort;
 
-    private InetAddress address;
     private Socket socket;
     private ServerSocket serverSocket;
     private BufferedReader in;
     private PrintWriter out;
 
-    private CloudByte[] fileContents = new CloudByte[1000000];
+    private final CloudByte[] fileContents = new CloudByte[1000000];
 
     public StorageNode(String serverAddress, int senderPort, int receiverPort, String path){
         this.serverAddress = serverAddress;
@@ -30,7 +29,7 @@ public class StorageNode {
         this.path = path;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args){
         try {
             if (args.length == 3)
                 new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
@@ -42,32 +41,31 @@ public class StorageNode {
         }
     }
 
-    public void runNode() throws IOException {
+    public void runNode() {
         try{
             connectToTheDirectory();
             registerInTheDirectory();
             getFileContent();
-            userInput();
-        }catch (IOException e){}
-        finally{
-            socket.close();
+            new userInput().start();
+        }catch (IOException e){
+            e.printStackTrace();
         }
     }
 
     private void connectToTheDirectory() throws IOException {
-        address = InetAddress.getByName(serverAddress);
+        InetAddress address = InetAddress.getByName(serverAddress);
         socket = new Socket(address,senderPort);
         serverSocket = new ServerSocket(receiverPort);
-        in = new BufferedReader(new InputStreamReader(
-                socket.getInputStream()));
         out = new PrintWriter(new BufferedWriter(
                 new OutputStreamWriter(socket.getOutputStream())),
                 true);
+        in = new BufferedReader(new InputStreamReader(
+                socket.getInputStream()));
     }
 
     private void registerInTheDirectory() throws UnknownHostException {
-        out.println("INS " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
-        System.err.println("Sending to directory: INS " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
+        out.println("INSC " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
+        System.err.println("Sending to directory: INSC " + socket.getLocalAddress().getHostAddress() + " " + serverSocket.getLocalPort());
     }
 
     private void getFileContent() throws IOException {
@@ -91,10 +89,22 @@ public class StorageNode {
         sendMessage("nodes");
     }
 
-    private void userInput() throws IOException  {
-        Scanner scanner = new Scanner(System.in);
-        while(true)
-            sendMessage(scanner.nextLine());
+    private class userInput extends Thread {
+
+        @Override
+        public void run() {
+            Scanner scanner = new Scanner(System.in);
+            String line = scanner.nextLine();
+            while (!line.equals("exit") && !line.equals("EXIT")) {
+                try {
+                    sendMessage(line);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                line = scanner.nextLine();
+            }
+            //scanner.close();
+        }
     }
 
     private void sendMessage(String line) throws IOException {
@@ -102,21 +112,19 @@ public class StorageNode {
             injectError(line.split("\\s+")[1]);
         else if(line.equals("nodes")) {
             out.println("nodes");
-            System.err.println("Got answer: "+ in.readLine());
+            System.err.println("Got answer: " + in.readLine());
             downloadThread();
-        }
-        else if(line.equals("exit") || line.equals("EXIT")){
-            return;
         }
         else System.err.println("Command not recognized.");
     }
 
     private void downloadThread() {
-        System.err.println("Lauching download thread: ");
+        System.err.println("Launching download thread: ");
     }
 
     private void injectError(String position){
         fileContents[Integer.parseInt(position)-1].makeByteCorrupt();
         System.err.println("Error injected: " + fileContents[Integer.parseInt(position)-1]);
     }
+
 }
