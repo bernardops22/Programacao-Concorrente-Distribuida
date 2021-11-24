@@ -1,5 +1,3 @@
-package messages;
-
 import java.io.Serializable;
 
 /** @brief Class to represent 7-bit bytes. Extra bit is for parity, and is set in constructor.

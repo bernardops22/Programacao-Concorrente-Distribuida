@@ -1,5 +1,3 @@
-package storage_nodes;
-
 import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -8,8 +6,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
-import messages.ByteBlockRequest;
-import messages.CloudByte;
+import java.util.concurrent.CountDownLatch;
 
 public class StorageNode {
 
@@ -21,7 +18,6 @@ public class StorageNode {
     private final int senderPort, receiverPort;
 
     private Socket socket;
-    private ServerSocket serverSocket;
     private BufferedReader in;
     private PrintWriter out;
 
@@ -52,12 +48,20 @@ public class StorageNode {
         try{
             connectToTheDirectory();
             registerInTheDirectory();
-            if(path!=null)
-                getFileContent();
+            if(path!=null) {
+                if (!getFileContent())
+                    return;
+            }
             else {
                 getNodesList();
-                createQueue();
-                getContentFromNodes();
+                if(nodes.size() != 0) {
+                    createQueue();
+                    getContentFromNodes();
+                }
+                else{
+                    System.err.println("No nodes available.");
+                    return;
+                }
             }
             new userInput().start();
             acceptingConnections();
@@ -81,15 +85,17 @@ public class StorageNode {
         System.err.println("Sending to directory: INSC " + serverAddress + " " + receiverPort);
     }
 
-    private void getFileContent(){
+    private boolean getFileContent(){
         try {
             byte[] fileContentsTemp = Files.readAllBytes(new File(path).toPath());
             if (fileContentsTemp.length != FILE_SIZE) throw new IOException();
             for (int i = 0; i < fileContentsTemp.length; i++)
                 fileContent[i] = new CloudByte(fileContentsTemp[i]);
             System.err.println("Loaded data from file: " + fileContent.length);
+            return true;
         } catch (IOException e){
-            System.err.println("File not valid.");
+            System.err.println("File not valid. Problem in the path or in the file content.");
+            return false;
         }
     }
 
@@ -115,21 +121,19 @@ public class StorageNode {
 
     private void getContentFromNodes() throws IOException, ClassNotFoundException, InterruptedException {
         long time = System.currentTimeMillis();
+        CountDownLatch cdl = new CountDownLatch(nodes.size());
         for (String node : nodes) {
             System.err.println("Launching download thread: " + node);
-            Thread thread = new DealWithRequest(this, node.split("\\s")[1], Integer.parseInt(node.split("\\s+")[2]));
+            Thread thread = new DealWithRequest(this, node.split("\\s")[1], Integer.parseInt(node.split("\\s+")[2]), cdl);
             thread.start();
-            if(nodes.get(nodes.size()-1) == node) thread.join(); //TODO wait for both threads to finish
+        }
+        try{
+            cdl.await();
+        }catch (InterruptedException e){
+            e.printStackTrace();
         }
         System.err.println("Elapsed time: " + (System.currentTimeMillis() - time));
-
         //TODO get downloaded data from threads
-
-        /*int data = 0;
-        for(int i = 0; i < nodes.size(); i++) {
-            data += Integer.parseInt(information.split(" ")[1]) * BLOCK_SIZE;
-        }*/
-        //System.err.println("Downloaded data length: " + data);
     }
 
     private void acceptingConnections() throws IOException, ClassNotFoundException {
@@ -144,7 +148,7 @@ public class StorageNode {
                     ByteBlockRequest request = (ByteBlockRequest) in.readObject();
                     CloudByte[] block = new CloudByte[request.getLength()];
                     int startIndex = request.getStartIndex();
-                    for (int i = startIndex; i < request.getLength(); i++) {
+                    for (int i = startIndex; i < startIndex + request.getLength(); i++) {
                         block[i - startIndex] = fileContent[i];
                     }
                     out.writeObject(block);

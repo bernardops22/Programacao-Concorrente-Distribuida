@@ -1,5 +1,3 @@
-package messages;
-
 import java.io.Serializable;
 
 public class ByteBlockRequest implements Serializable {

@@ -1,12 +1,10 @@
-package storage_nodes;
-
 import java.util.LinkedList;
 import java.util.Queue;
 
 public class BlockingQueue<T> {
 
     private final Queue<T> queue;
-    private int capacity;
+    private final int capacity;
 
     public BlockingQueue(int capacity) {
         this.queue = new LinkedList<>();
@@ -30,9 +28,5 @@ public class BlockingQueue<T> {
 
     public int size() {
         return queue.size();
-    }
-
-    public void clear() {
-        queue.clear();
     }
 }
