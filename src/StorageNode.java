@@ -33,15 +33,13 @@ public class StorageNode {
     }
 
     public static void main(String[] args){
-        try {
-            if (args.length == 3)
-                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
-            else if (args.length == 4)
-                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
-        } catch (RuntimeException e) {
-            System.err.println("Problem in the arguments: Directory port and address must be written, " +
+        if (args.length == 3)
+            new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
+        else if (args.length == 4)
+            new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
+        else
+            throw new RuntimeException("Problem in the arguments: Directory port and address must be written, " +
                     "followed by the node port and the data file name.");
-        }
     }
 
     public void runNode() {

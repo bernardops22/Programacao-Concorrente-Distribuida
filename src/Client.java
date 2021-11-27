@@ -1,7 +1,5 @@
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -9,11 +7,10 @@ import java.net.InetAddress;
 import java.net.Socket;
 
 public class Client {
-
     private ObjectInputStream in;
     private ObjectOutputStream out;
 
-    public Client(String addressTxt, int port) throws IOException {
+    public Client(String addressTxt, int port) {
         System.err.println("Connecting to: " + addressTxt + ":" + port);
         try{
             InetAddress address = InetAddress.getByName(addressTxt);
@@ -25,6 +22,13 @@ public class Client {
             return;
         }
         addFrameContent();
+    }
+
+    public static void main(String[] args){
+        if(args.length == 2)
+            new Client(args[0], Integer.parseInt(args[1]));
+        else
+            throw new RuntimeException("Args must be address and port of node.");
     }
 
     private void centerFrame(JFrame frame) {
@@ -93,12 +97,5 @@ public class Client {
         centerFrame(frame);
         frame.pack();
         frame.setVisible(true);
-    }
-
-    public static void main(String[] args) throws IOException {
-        if(args.length == 2)
-            new Client(args[0], Integer.parseInt(args[1]));
-        else
-            System.err.println("Args must be address and port of node.");
     }
 }
