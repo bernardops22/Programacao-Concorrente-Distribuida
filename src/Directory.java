@@ -1,4 +1,5 @@
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
@@ -7,6 +8,7 @@ import java.util.List;
 public class Directory {
 
     private final ServerSocket serverSocket;
+    private Socket clientSocket;
     private final List<String> nodes = new ArrayList<>();
 
     public Directory(int porto) throws IOException {
@@ -20,25 +22,37 @@ public class Directory {
             throw new RuntimeException("Port number must be the first and only argument");
     }
 
-    public void serve(){
+    private void serve() throws IOException {
         System.err.println("Initiating service...");
         while (true){
             try {
-                Socket socket = serverSocket.accept();
-                new dealWithNode(socket).start();
+                clientSocket = serverSocket.accept();
+                new DealWithNode(clientSocket).start();
             }catch(IOException e){
                 System.err.println("Error accepting client connection to the directory");
             }
         }
     }
 
-    private class dealWithNode extends Thread{
+    private void removeStorageNode(InetAddress clientAddress, int clientPort){
+        for(String node: nodes){
+            if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
+                nodes.remove(node);
+                System.err.println("Client disconnected: " + node);
+            }
+            else
+                System.err.println("Error disconnecting client: " + node);
+        }
+    }
 
+    private class DealWithNode extends Thread{
         private final Socket socket;
         private final BufferedReader in;
         private final PrintWriter out;
+        private InetAddress clientAddress;
+        private int clientPort;
 
-        public dealWithNode (Socket socket) throws IOException {
+        public DealWithNode(Socket socket) throws IOException {
             this.socket = socket;
             in = new BufferedReader(new InputStreamReader(
                     socket.getInputStream()));
@@ -56,28 +70,32 @@ public class Directory {
                     switch (requestContent[0]){
                         case "INSC":
                             if(requestContent.length == 3)
-                                enrollClient(requestContent[1],requestContent[2]);
+                                enrollClient(InetAddress.getByName(requestContent[1]),Integer.parseInt(requestContent[2]));
                             else
                                 System.err.println("Error receiving client enrollment.");
                             break;
                         case "nodes":
-                            System.err.println("New message received: " + request + ".");
+                            System.err.println("New message received: " + request);
                             sendNodeList();
                             break;
                         default:
-                            System.err.println("New message received: " + request + ".");
-                            System.err.println("Message not understood: " + request + ".");
+                            System.err.println("New message received: " + request);
+                            System.err.println("Message not understood: " + request);
                             break;
                     }
                 }
             } catch (IOException e) {
                 System.err.println("Error initiating communication channel with the client.");
+            }finally {
+                removeStorageNode(clientAddress,clientPort);
             }
         }
 
-        public void enrollClient(String address, String port){
-            nodes.add(address + " " + Integer.parseInt(port));
-            System.err.println("Client enrolled: " + socket.getLocalAddress().getHostAddress() + " " + port + ".");
+        public void enrollClient(InetAddress address, int port){
+            this.clientAddress = address;
+            this.clientPort = port;
+            nodes.add(address + " " + port);
+            System.err.println("Client enrolled: " + socket.getLocalAddress().getHostAddress() + " " + port);
         }
 
         public void sendNodeList(){
