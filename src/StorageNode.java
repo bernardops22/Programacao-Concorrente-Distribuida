@@ -3,6 +3,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.rmi.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -32,20 +33,27 @@ public class StorageNode {
         this.path = path;
     }
 
-    public static void main(String[] args){
-        if (args.length == 3)
-            new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
-        else if (args.length == 4)
-            new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
-        else
-            throw new RuntimeException("Problem in the arguments: Directory port and address must be written, " +
+    public static void main(String[] args) {
+        try {
+            if (args.length == 3)
+                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
+            else if (args.length == 4)
+                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
+        } catch(NumberFormatException e){
+            System.err.println("Both address and ports must be integers.");
+        } catch (RuntimeException e) {
+            System.err.println("Problem in the arguments: Directory port and address must be written, " +
                     "followed by the node port and the data file name.");
+        }
     }
 
     public void runNode() {
         try{
             connectToTheDirectory();
-            registerInTheDirectory();
+            if(!registerInTheDirectory()) {
+                System.err.println("Client already enrolled. Try changing port number.");
+                return;
+            }
             if(path!=null) {
                 if (!getFileContent())
                     return;
@@ -57,7 +65,7 @@ public class StorageNode {
                     getContentFromNodes();
                 }
                 else{
-                    System.err.println("No nodes available.");
+                    System.err.println("No nodes available beside yours.");
                     return;
                 }
             }
@@ -78,9 +86,10 @@ public class StorageNode {
                 socket.getInputStream()));
     }
 
-    private void registerInTheDirectory(){
+    private boolean registerInTheDirectory() throws IOException {
         out.println("INSC " + serverAddress + " " + receiverPort);
         System.err.println("Sending to directory: INSC " + serverAddress + " " + receiverPort);
+        return in.readLine().equals("true");
     }
 
     private boolean getFileContent(){
