@@ -37,14 +37,42 @@ public class Directory {
         }
     }
 
+    private synchronized void addClient(String clientAddress, String clientPort){
+        nodes.add(clientAddress + " " + clientPort);
+        System.err.println("Client enrolled: " + clientAddress + " " + clientPort);
+    }
+
+    private synchronized void sendNodeList(PrintWriter out){
+        for (String node : nodes)
+            out.println("node " + node);
+        out.println("end");
+    }
+
+    private synchronized void disconnectClient(String clientAddress, String clientPort){
+        for(String node: nodes){
+            if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
+                nodes.remove(node);
+                System.err.println("Client disconnected: " + node);
+                return;
+            }
+        }
+    }
+
+    private synchronized boolean isNodeEnrolled(String clientAddress, String clientPort){
+        for(String node: nodes){
+            if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
+                return true;
+            }
+        }
+        return false;
+    }
+
     private class DealWithNode extends Thread{
-        private final Socket socket;
         private final BufferedReader in;
         private final PrintWriter out;
         private String clientAddress, clientPort;
 
         public DealWithNode(Socket socket) throws IOException {
-            this.socket = socket;
             in = new BufferedReader(new InputStreamReader(
                     socket.getInputStream()));
             out = new PrintWriter(new BufferedWriter(
@@ -54,11 +82,11 @@ public class Directory {
 
         @Override
         public void run(){
+            boolean isConnected = false;
             try {
                 while(true) {
                     String request = in.readLine();
                     if(request == null){
-                        System.err.println("Message not understood: null");
                         break;
                     }
                     String[] requestContent = request.split(" ");
@@ -67,20 +95,21 @@ public class Directory {
                             if(requestContent.length == 3) {
                                 this.clientAddress = requestContent[1];
                                 this.clientPort = requestContent[2];
-                                if(isNodeEnrolled())
-                                    out.println("false");
-                                else {
+                                if(!isNodeEnrolled(clientAddress, clientPort)){
                                     out.println("true");
-                                    System.err.println("Client enrolled: " + clientAddress + " " + clientPort);
+                                    addClient(clientAddress, clientPort);
+                                    isConnected = true;
+                                } else{
+                                    out.println("false");
+                                    isConnected = false;
                                 }
-                                addClient();
                             }
                             else
                                 System.err.println("Error receiving client enrollment.");
                             break;
                         case "nodes":
                             System.err.println("New message received: " + request);
-                            sendNodeList();
+                            sendNodeList(out);
                             break;
                         default:
                             System.err.println("Message not understood: " + request);
@@ -88,40 +117,11 @@ public class Directory {
                     }
                 }
             } catch (IOException e) {
-                System.err.println("Error initiating communication channel with the client.");
+                System.err.println("Error establishing communication channel with the client.");
             }finally {
-                disconnectClient();
+                if(isConnected)
+                    disconnectClient(clientAddress, clientPort);
             }
-        }
-
-        public synchronized void addClient(){
-            nodes.add(clientAddress + " " + clientPort);
-            System.err.println("Client added to the list: " + clientAddress + " " + clientPort);
-        }
-
-        public void sendNodeList(){
-            for (String node : nodes)
-                out.println("node " + node);
-            out.println("end");
-        }
-
-        private synchronized void disconnectClient(){
-            for(String node: nodes){
-                if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
-                    nodes.remove(node);
-                    System.err.println("Client removed from the list: " + node);
-                    return;
-                }
-            }
-        }
-
-        private synchronized boolean isNodeEnrolled(){
-            for(String node: nodes){
-                if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
-                    return true;
-                }
-            }
-            return false;
         }
     }
 }

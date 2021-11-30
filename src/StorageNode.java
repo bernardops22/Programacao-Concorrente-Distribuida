@@ -3,10 +3,11 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
-import java.rmi.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 
 public class StorageNode {
@@ -22,9 +23,9 @@ public class StorageNode {
     private BufferedReader in;
     private PrintWriter out;
 
-    public final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
+    private final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
     private final List<String> nodes = new ArrayList<>();
-    public BlockingQueue<ByteBlockRequest> queue = new BlockingQueue<>(MAX_BLOCKS);
+    private final BlockingQueue<ByteBlockRequest> queue = new ArrayBlockingQueue<>(MAX_BLOCKS);
 
     public StorageNode(String serverAddress, int senderPort, int receiverPort, String path){
         this.serverAddress = serverAddress;
@@ -39,15 +40,13 @@ public class StorageNode {
                 new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
             else if (args.length == 4)
                 new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
-        } catch(NumberFormatException e){
-            System.err.println("Both address and ports must be integers.");
-        } catch (RuntimeException e) {
+        } catch(Exception e){
             System.err.println("Problem in the arguments: Directory port and address must be written, " +
                     "followed by the node port and the data file name.");
         }
     }
 
-    public void runNode() {
+    private void runNode() {
         try{
             connectToTheDirectory();
             if(!registerInTheDirectory()) {
@@ -87,8 +86,8 @@ public class StorageNode {
     }
 
     private boolean registerInTheDirectory() throws IOException {
-        out.println("INSC " + serverAddress + " " + receiverPort);
-        System.err.println("Sending to directory: INSC " + serverAddress + " " + receiverPort);
+        out.println("INSC " + socket.getLocalAddress().getHostAddress() + " " + receiverPort);
+        System.err.println("Sending to directory: INSC " + socket.getLocalAddress().getHostAddress() + " " + receiverPort);
         return in.readLine().equals("true");
     }
 
@@ -131,7 +130,7 @@ public class StorageNode {
         CountDownLatch cdl = new CountDownLatch(nodes.size());
         for (String node : nodes) {
             System.err.println("Launching download thread: " + node);
-            Thread thread = new DealWithRequest(this, node.split("\\s")[1], Integer.parseInt(node.split("\\s+")[2]), cdl);
+            Thread thread = new DealWithRequest(node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl);
             thread.start();
         }
         try{
@@ -141,6 +140,54 @@ public class StorageNode {
         }
         System.err.println("Elapsed time: " + (System.currentTimeMillis() - time));
         //TODO get downloaded data from threads
+    }
+
+    private class DealWithRequest extends Thread{
+
+        private final String inAddress;
+        private final int inPort;
+        private final CountDownLatch cdl;
+        private int numBlocks = 0;
+
+        public DealWithRequest(String inAddress, int inPort, CountDownLatch cdl) {
+            this.inAddress = inAddress;
+            this.inPort = inPort;
+            this.cdl = cdl;
+        }
+
+        @Override
+        public void run(){
+            ByteBlockRequest request = null;
+            try {
+                Socket socket = new Socket(inAddress, inPort);
+                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+                ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+                while (queue.size() != 0) {
+                    request = queue.take();
+                    final int startIndex = request.getStartIndex();
+                    final int lastIndex = startIndex + request.getLength();
+                    out.writeObject(request);
+                    CloudByte[] block = (CloudByte[]) in.readObject();
+                    int j = 0;
+                    for (int i = startIndex; i < lastIndex; i++) {
+                        fileContent[i] = block[j];
+                        j++;
+                    }
+                    numBlocks++;
+                }
+                out.close();
+                in.close();
+                socket.close();
+            } catch (IOException | InterruptedException | ClassNotFoundException e) {
+                if(request != null) {
+                    queue.add(request);
+                    System.err.println("Last request added to the queue : " + inAddress + " " + inPort);
+                }
+                System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
+            }
+            System.err.println("Downloaded " + numBlocks + " blocks from " + inAddress + ":" + inPort);
+            cdl.countDown();
+        }
     }
 
     private void acceptingConnections() throws IOException, ClassNotFoundException {
@@ -153,16 +200,18 @@ public class StorageNode {
             while(true) {
                 try {
                     ByteBlockRequest request = (ByteBlockRequest) in.readObject();
-                    CloudByte[] block = new CloudByte[request.getLength()];
-                    int startIndex = request.getStartIndex();
-                    for (int i = startIndex; i < startIndex + request.getLength(); i++) {
-                        block[i - startIndex] = fileContent[i];
-                    }
+                    int requestSize = request.getLength();
+                    CloudByte[] block = new CloudByte[requestSize];
+                    for (int i = 0; i < requestSize; i++)
+                        block[i] = fileContent[i + request.getStartIndex()];
                     out.writeObject(block);
                 }catch(Exception e) {
                     break;
                 }
             }
+            getContentSocket.close();
+            out.close();
+            in.close();
         }
     }
 
@@ -171,9 +220,9 @@ public class StorageNode {
         public void run() {
             Scanner scanner = new Scanner(System.in);
             String line = scanner.nextLine();
-            while (!line.equals("exit") && !line.equals("EXIT")) {
-                if(line.split("\\s")[0].equals("ERROR"))
-                    injectError(line.split("\\s+")[1]);
+            while (true) {
+                if(line.split(" ")[0].equals("ERROR"))
+                    injectError(line.split(" ")[1]);
                 else System.err.println("Command not recognized.");
                 line = scanner.nextLine();
             }
