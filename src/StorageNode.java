@@ -15,6 +15,7 @@ public class StorageNode {
     private static final int FILE_SIZE = 1000000;
     private static final int BLOCK_SIZE = 100;
     private static final int MAX_BLOCKS = 10000;
+    private static final int MAX_ERROR_CORRECTORS = 2;
 
     private final String serverAddress, path;
     private final int senderPort, receiverPort;
@@ -22,6 +23,7 @@ public class StorageNode {
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
+    private boolean correction = false;
 
     private final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
     private final List<String> nodes = new ArrayList<>();
@@ -58,10 +60,11 @@ public class StorageNode {
                     return;
             }
             else {
-                getNodesList();
+                if(fileContent[0] == null)
+                    getNodesList();
                 if(nodes.size() != 0) {
                     createQueue();
-                    getContentFromNodes();
+                    getContentFromNodes(nodes.size());
                 }
                 else{
                     System.err.println("No nodes available beside yours.");
@@ -106,17 +109,16 @@ public class StorageNode {
     }
 
     private void getNodesList() throws IOException {
-        if(fileContent[0] == null) {
-            System.err.println("Querying directory from other nodes...");
+        nodes.clear();
+        System.err.println("Querying directory for other nodes...");
+        out.println("nodes");
+        String line = in.readLine();
+        while (!line.equals("end")) {
+            System.err.println("Got answer: " + line);
+            if (!line.equals("node " + socket.getLocalAddress().getHostAddress() + " " + receiverPort))
+                nodes.add(line);
             out.println("nodes");
-            String line = in.readLine();
-            while (!line.equals("end")) {
-                System.err.println("Got answer: " + line);
-                if (!line.equals("node " + socket.getLocalAddress().getHostAddress() + " " + receiverPort))
-                    nodes.add(line);
-                out.println("nodes");
-                line = in.readLine();
-            }
+            line = in.readLine();
         }
     }
 
@@ -125,11 +127,12 @@ public class StorageNode {
             queue.put(new ByteBlockRequest(i, BLOCK_SIZE));
     }
 
-    private void getContentFromNodes() throws IOException, ClassNotFoundException, InterruptedException {
+    private void getContentFromNodes(int cdlSize) throws IOException, ClassNotFoundException, InterruptedException {
         long time = System.currentTimeMillis();
-        CountDownLatch cdl = new CountDownLatch(nodes.size());
+        CountDownLatch cdl = new CountDownLatch(cdlSize);
         for (String node : nodes) {
-            System.err.println("Launching download thread: " + node);
+            if(!correction)System.err.println("Launching download thread: " + node);
+            else System.err.println("Launching correction thread: " + node);
             Thread thread = new DealWithRequest(node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl);
             thread.start();
         }
@@ -138,7 +141,7 @@ public class StorageNode {
         }catch (InterruptedException e){
             e.printStackTrace();
         }
-        System.err.println("Elapsed time: " + (System.currentTimeMillis() - time));
+        if(!correction) System.err.println("Elapsed time: " + (System.currentTimeMillis() - time));
         //TODO get downloaded data from threads
     }
 
@@ -164,16 +167,17 @@ public class StorageNode {
                 ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
                 while (queue.size() != 0) {
                     request = queue.take();
-                    final int startIndex = request.getStartIndex();
-                    final int lastIndex = startIndex + request.getLength();
                     out.writeObject(request);
-                    CloudByte[] block = (CloudByte[]) in.readObject();
-                    int j = 0;
-                    for (int i = startIndex; i < lastIndex; i++) {
-                        fileContent[i] = block[j];
-                        j++;
+                    try {
+                        CloudByte[] block = (CloudByte[]) in.readObject();
+                        for (int i = 0; i < request.getLength(); i++)
+                            fileContent[i + request.getStartIndex()] = block[i];
+                        numBlocks++;
+                    }catch(NullPointerException e){
+                        queue.add(request);
+                        System.err.println("Parity error. Last request added to the queue: " + request);
+                        sleep(10000); //TODO Evitar loops infinitos
                     }
-                    numBlocks++;
                 }
                 out.close();
                 in.close();
@@ -181,11 +185,12 @@ public class StorageNode {
             } catch (IOException | InterruptedException | ClassNotFoundException e) {
                 if(request != null) {
                     queue.add(request);
-                    System.err.println("Last request added to the queue : " + inAddress + " " + inPort);
+                    System.err.println("Last request added to the queue : " + request);
                 }
                 System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
             }
-            System.err.println("Downloaded " + numBlocks + " blocks from " + inAddress + ":" + inPort);
+            if(!correction) System.err.println("Downloaded " + numBlocks + " blocks from " + inAddress + ":" + inPort);
+            //TODO try to end correction after
             cdl.countDown();
         }
     }
@@ -193,6 +198,8 @@ public class StorageNode {
     private void acceptingConnections() throws IOException, ClassNotFoundException {
         ServerSocket serverSocket = new ServerSocket(receiverPort);
         System.err.println("Accepting connections...");
+        for(int i = 0; i < MAX_ERROR_CORRECTORS; i++)
+            new CheckForParityErrors().start();
         while(true){
             Socket getContentSocket = serverSocket.accept();
             ObjectOutputStream out = new ObjectOutputStream(getContentSocket.getOutputStream());
@@ -204,7 +211,8 @@ public class StorageNode {
                     CloudByte[] block = new CloudByte[requestSize];
                     for (int i = 0; i < requestSize; i++)
                         block[i] = fileContent[i + request.getStartIndex()];
-                    out.writeObject(block);
+                    if(checkBlockForErrors(block)) out.writeObject(block);
+                    else out.writeObject(null);
                 }catch(Exception e) {
                     break;
                 }
@@ -212,6 +220,55 @@ public class StorageNode {
             getContentSocket.close();
             out.close();
             in.close();
+        }
+    }
+
+    private boolean checkBlockForErrors(CloudByte[] block){
+        for(int i = 0; i != block.length; i++)
+            if(!block[i].isParityOk())
+                return false;
+        return true;
+    }
+
+    private class CheckForParityErrors extends Thread {
+
+        @Override
+        public void run() {
+            try {
+                int start = 0;
+                if (this.getId() == 1) start = fileContent.length/2;
+                while (true) {
+                    for (int i = start; i < fileContent.length/2; i++) {
+                        CloudByte b = fileContent[i];
+                        rectifyParityError(b, i);
+                        sleep(1/100);
+                    }
+                }
+            }catch (IOException | InterruptedException | ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private synchronized void rectifyParityError(CloudByte b, int position) throws IOException, ClassNotFoundException, InterruptedException {
+        if (!b.isParityOk()) {
+            try {
+                correction = true;
+                System.err.println("Data Maintenance: Error was detected at " + (position + 1) + ": " + b);
+                getNodesList();
+                if (nodes.size() >= 2) {
+                    for (int i = 0; i != nodes.size(); i++)
+                        queue.add(new ByteBlockRequest(position, 1));
+                    getContentFromNodes(2);
+                    System.err.println("Corrected to: " + fileContent[position]);
+                    correction = false;
+                } else {
+                    System.err.println("Cannot correct the error. Insufficient number of nodes.\nDisconnecting node.");
+                    System.exit(-1); //TODO to correct in the future
+                }
+            } catch (IOException | ClassNotFoundException | InterruptedException e) {
+                e.printStackTrace(); //TODO try catch
+            }
         }
     }
 
