@@ -235,14 +235,11 @@ public class StorageNode {
         @Override
         public void run() {
             try {
-                int start = 0;
-                if (this.getId() == 1) start = fileContent.length/2;
+                int num = 0;
                 while (true) {
-                    for (int i = start; i < fileContent.length/2; i++) {
-                        CloudByte b = fileContent[i];
-                        rectifyParityError(b, i);
-                        sleep(1/100);
-                    }
+                    int r = (int) (Math.random() * (fileContent.length-1));
+                    rectifyParityError(fileContent[r], r, num);
+                    num++;
                 }
             }catch (IOException | InterruptedException | ClassNotFoundException e) {
                 e.printStackTrace();
@@ -250,17 +247,17 @@ public class StorageNode {
         }
     }
 
-    private synchronized void rectifyParityError(CloudByte b, int position) throws IOException, ClassNotFoundException, InterruptedException {
+    private synchronized void rectifyParityError(CloudByte b, int position, int num) throws IOException, ClassNotFoundException, InterruptedException {
         if (!b.isParityOk()) {
             try {
                 correction = true;
-                System.err.println("Data Maintenance: Error was detected at " + (position + 1) + ": " + b);
+                System.err.println("Data Maintenance: Error was detected at " + position + ": " + b);
                 getNodesList();
                 if (nodes.size() >= 2) {
                     for (int i = 0; i != nodes.size(); i++)
                         queue.add(new ByteBlockRequest(position, 1));
                     getContentFromNodes(2);
-                    System.err.println("Corrected to: " + fileContent[position]);
+                    System.err.println("Corrected to: " + fileContent[position] + "\nCloudBytes verified until now: " + num + "\nStarting error detection from zero...");
                     correction = false;
                 } else {
                     System.err.println("Cannot correct the error. Insufficient number of nodes.\nDisconnecting node.");
@@ -287,7 +284,7 @@ public class StorageNode {
     }
 
     private void injectError(String position){
-        fileContent[Integer.parseInt(position)-1].makeByteCorrupt();
-        System.err.println("Error injected: " + fileContent[Integer.parseInt(position)-1]);
+        fileContent[Integer.parseInt(position)].makeByteCorrupt();
+        System.err.println("Error injected: " + fileContent[Integer.parseInt(position)]);
     }
 }
