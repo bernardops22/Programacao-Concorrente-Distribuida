@@ -85,7 +85,7 @@ public class Client {
                 CloudByte[] block = (CloudByte[]) in.readObject();
                 String text = "";
                 for (CloudByte cloudByte : block)
-                    text = text.concat(cloudByte.toString());
+                    text = text.concat(cloudByte.toString()).concat(" ");
                 resultsField.setText(text);
             } catch (IOException | ClassNotFoundException ex) {
                 ex.printStackTrace();

@@ -2,9 +2,9 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -21,7 +21,8 @@ public class StorageNode {
     private static final int BLOCK_SIZE = 100;
     private static final int MAX_BLOCKS = 10000;
 
-    private final String serverAddress, path;
+    private final InetAddress serverAddress;
+    private final String path;
     private final int senderPort, receiverPort;
 
     private Socket socket;
@@ -30,14 +31,14 @@ public class StorageNode {
 
     public final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
     private final List<String> nodes = new ArrayList<>();
-    private final List<CloudByte[]> correction = new ArrayList<>();
+    private final BlockingQueue<CloudByte> correction = new ArrayBlockingQueue<>(2);
     public final BlockingQueue<ByteBlockRequest> queue = new ArrayBlockingQueue<>(MAX_BLOCKS);
 
     /**
      * Construtor da classe capaz de receber até quatro argumentos.
-     * O argumento path pode ser null mas a verificação do mesmo é feita no método runNode.
+     * O argumento path pode ser null, mas a verificação do mesmo é feita no método runNode.
      */
-    public StorageNode(String serverAddress, int senderPort, int receiverPort, String path){
+    public StorageNode(InetAddress serverAddress, int senderPort, int receiverPort, String path){
         this.serverAddress = serverAddress;
         this.senderPort = senderPort;
         this.receiverPort = receiverPort;
@@ -46,18 +47,24 @@ public class StorageNode {
 
     /**
      * Assim que o código inicia temos dois casos.
-     * - O node tem acesso inicial ao ficheiro .bin
-     * - O node não tem acesso inicial ao ficheiro .bin
+     * O node tem acesso inicial ao ficheiro bin
+     * O node não tem acesso inicial ao ficheiro bin
      */
-    public static void main(String[] args) {
+    public static void main(String[] args) throws UnknownHostException {
         try {
             if (args.length == 3)
-                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
+                new StorageNode(InetAddress.getByName(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]), null).runNode();
             else if (args.length == 4)
-                new StorageNode(args[0], Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
-        } catch(Exception e){
+                new StorageNode(InetAddress.getByName(args[0]), Integer.parseInt(args[1]), Integer.parseInt(args[2]), args[3]).runNode();
+            else throw new IllegalArgumentException("Number of arguments invalid");
+        } catch (NumberFormatException e){
+            throw new NumberFormatException("Inserted port(s) invalid");
+        } catch (UnknownHostException e1) {
+            throw new UnknownHostException("Inserted IP invalid");
+        } catch (Exception e2) {
             System.err.println("Problem in the arguments: Directory port and address must be written, " +
                     "followed by the node port and the data file name.");
+            e2.printStackTrace();
         }
     }
 
@@ -72,15 +79,13 @@ public class StorageNode {
                 System.err.println("Client already enrolled. Try changing port number.");
                 return;
             }
-            if(path!=null) {
-                if (!getFileContent())
-                    return;
-            }
+            if (path!=null)
+                getFileContent();
             else {
-                    getNodesList();
+                getNodesList();
                 if(nodes.size() != 0) {
                     createQueue();
-                    getContentFromNodes(nodes.size());
+                    getContentFromNodes();
                 }
                 else{
                     System.err.println("No nodes available beside yours.");
@@ -88,7 +93,9 @@ public class StorageNode {
                 }
             }
             new UserInput(this).start();
-            acceptingConnections();
+            System.err.println("Accepting connections...");
+            startErrorAnalysis();
+            waitAndSendData();
         }catch (IOException | InterruptedException | ClassNotFoundException e){
             e.printStackTrace();
         }
@@ -100,8 +107,7 @@ public class StorageNode {
      * Nota: Método instanciado pelo runNode().
      */
     private void connectToTheDirectory() throws IOException {
-        InetAddress address = InetAddress.getByName(serverAddress);
-        socket = new Socket(address,senderPort);
+        socket = new Socket(serverAddress,senderPort);
         out = new PrintWriter(new BufferedWriter(
                 new OutputStreamWriter(socket.getOutputStream())),
                 true);
@@ -122,30 +128,25 @@ public class StorageNode {
 
     /**
      * Nesta função o ficheiro dado é lido e convertido num vetor de CloudByte.
-     * Esta função apenas é instanciada caso o caminho para o ficheiro .bin for dado e o
+     * Esta função apenas é instanciada caso o caminho para o ficheiro bin for dado e o
      * nó se tenha conseguido inscrever no diretório.
-     * @return Retorna true se o ficheiro for descarregado com sucesso. Caso o caminho para o ficheiro não for válido
-     * ou o ficheiro não for válido é retornado false.
-     * Nota: Função instanciada pelo runNode().
      */
-    private boolean getFileContent(){
+    private void getFileContent() throws IOException {
         try {
             byte[] fileContentsTemp = Files.readAllBytes(new File(path).toPath());
             if (fileContentsTemp.length != FILE_SIZE) throw new IOException();
             for (int i = 0; i < fileContentsTemp.length; i++)
                 fileContent[i] = new CloudByte(fileContentsTemp[i]);
             System.err.println("Loaded data from file: " + fileContent.length);
-            return true;
         } catch (IOException e){
-            System.err.println("File not valid. Problem in the path or in the file content.");
-            return false;
+            throw new IOException("File not valid. Problem in the path or in the file content.");
         }
     }
 
     /**
-     * Neste método faz-se um pedido ao diretorio dos nós atualmente inscritos.
+     * Neste método faz-se um pedido ao diretório dos nós atualmente inscritos.
      * É criada uma lista de nós inscritos no diretório (excluindo o próprio).
-     * Este método apenas é instanciado caso o caminho para o ficheiro .bin for null e o
+     * Este método apenas é instanciado caso o caminho para o ficheiro bin for null e o
      * nó se tenha conseguido inscrever no diretório.
      * Nota: Método instanciado pelo runNode().
      */
@@ -165,9 +166,9 @@ public class StorageNode {
     /**
      * Neste método são adicionados os pedidos necessários BlockingQueue para possível receber o
      * conteúdo total do ficheiro presente nos outros nós inscritos no diretório.
-     * Este método apenas é instanciado caso o caminho para o ficheiro .bin for null,
+     * Este método apenas é instanciado caso o caminho para o ficheiro bin for null,
      * se o nó se tenha conseguido inscrever no diretório e
-     * se a lista de nós presentes no diretório for diferente de zero.
+     * se a lista de nós do diretório for diferente de zero.
      * Nota: Método instanciado pelo runNode().
      */
     private void createQueue() throws InterruptedException {
@@ -183,35 +184,37 @@ public class StorageNode {
      * após ter sido atualizada a lista de pedidos a fazer aos outros nós.
      * Nota: Método instanciado pelo runNode().
      */
-    private void getContentFromNodes(int cdlSize) throws IOException, ClassNotFoundException, InterruptedException {
-        long time = System.currentTimeMillis();
-        CountDownLatch cdl = new CountDownLatch(cdlSize);
+    private void getContentFromNodes() throws ClassNotFoundException, InterruptedException {
+        final long time = System.currentTimeMillis();
+        CountDownLatch cdl = new CountDownLatch(nodes.size());
         for (String node : nodes) {
             System.err.println("Launching download thread: " + node);
             new DealWithRequest(this,node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl).start();
         }
-        try{
-            cdl.await();
-        }catch (InterruptedException e){
-            e.printStackTrace();
-        }
+        cdl.await();
         System.err.println("Elapsed time: " + (System.currentTimeMillis() - time));
-        //TODO get downloaded data from threads
     }
 
     /**
      * A partir deste momento, os nós estão prontos a receber pedidos de outros nós e
-     * estão constantemente a procurar por erros no seu ficheiro.
-     * Este método apenas é instanciado após os nós terem o conteúdo total do ficheiro, quer por
-     * via direta quer por via de outros nós.
+     * procuram constantemente por erros no seu ficheiro.
+     * Este método apenas é instanciado após os nós terem o conteúdo total do ficheiro, quer por via direta,
+     * quer através de outros nós.
      * Nota: Método instanciado pelo runNode().
      */
-    private void acceptingConnections() throws IOException, ClassNotFoundException {
-        ServerSocket serverSocket = new ServerSocket(receiverPort);
-        System.err.println("Accepting connections...");
+    private void startErrorAnalysis() {
         Lock lock = new ReentrantLock();
         new CheckForParityErrors(this, 0,lock).start();
         new CheckForParityErrors(this, 1,lock).start();
+    }
+
+    /**
+     * Neste método o nó espera por pedidos de blocos de CloudByte e envia sempre que conseguir.
+     * É instanciado o método checkBlockForErrors para não serem enviados blocos com erros de paridade.
+     * Nota: Método instanciado pelo runNode().
+     */
+    private void waitAndSendData() throws IOException {
+        ServerSocket serverSocket = new ServerSocket(receiverPort);
         while(true){
             Socket getContentSocket = serverSocket.accept();
             ObjectOutputStream out = new ObjectOutputStream(getContentSocket.getOutputStream());
@@ -270,33 +273,36 @@ public class StorageNode {
     }
 
     /**
-     * Neste método são lançadas threads usadas para receber os valores correto do byte errado.
-     * Caso sejam recebidos dois valores iguais, o byte é corrigido para o novo valor.
+     * Neste método são lançadas threads usadas para receber os valores corretos do “byte” errado.
+     * Caso sejam recebidos dois valores iguais, o “byte” é corrigido para o novo valor.
      * Método de correção de erros.
-     * Limitação: Pressupõe-se que os bytes recebidos são sempre iguais.
+     * Limitação: Pressupõe-se que os “bytes” recebidos são sempre iguais.
      * Nota: Método instanciado pela thread CheckForParityErrors.
      */
     public void correctError(int position) throws InterruptedException {
         CountDownLatch cdl = new CountDownLatch(2);
         for (String node : nodes) {
             System.err.println("Launching correction thread: " + node);
-            new DealWithError(this,node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl, correction).start();
+            new DealWithError(this, node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl, correction).start();
         }
         cdl.await();
-        if(Arrays.equals(correction.get(0), correction.get(1))) {
-            fileContent[position] = correction.get(0)[0];
-            System.err.println("Corrected to: " + fileContent[position] +
-                    "\nStarting error detection from zero...");
+        CloudByte b1 = correction.take();
+        CloudByte b2 = correction.take();
+        if(b1.equals(b2)) {
+            fileContent[position] = b1;
+            System.err.println("Corrected to: " + fileContent[position]);
+            System.err.println("Continuing error analysis...");
         }
-        correction.clear();
     }
 
     /**
      * Injeção local do erro para posterior correção pelas threads de procura de erros.
      * Nota: Método instanciado na classe UserInput
      */
-    public void injectError(String position){
-        fileContent[Integer.parseInt(position)].makeByteCorrupt();
-        System.err.println("Error injected: " + fileContent[Integer.parseInt(position)]);
+    public void injectError(int position){
+        if(position >= 0 && position <= 999999) {
+            fileContent[position].makeByteCorrupt();
+            System.err.println("Error injected: " + fileContent[position]);
+        }else System.err.println("Invalid array position.");
     }
 }

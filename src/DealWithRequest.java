@@ -47,12 +47,11 @@ public class DealWithRequest extends Thread{
             in.close();
             socket.close();
         } catch (IOException | InterruptedException | ClassNotFoundException e) {
+            System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
             if(request != null) {
                 node.queue.add(request);
                 System.err.println("Last request added to the queue : " + request);
             }
-            System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
-            e.printStackTrace();
         }
         System.err.println("Downloaded " + numBlocks + " blocks from " + inAddress + ":" + inPort);
         cdl.countDown();

@@ -1,3 +1,4 @@
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 /**
@@ -18,12 +19,18 @@ public class UserInput extends Thread {
             String line = scanner.nextLine();
             while (true) {
                 if (line.split(" ")[0].equals("ERROR"))
-                    node.injectError(line.split(" ")[1]);
-                else System.err.println("Command not recognized.");
+                    try {
+
+                        node.injectError(Integer.parseInt(line.split(" ")[1]));
+                    }
+                    catch (NoSuchElementException | NumberFormatException e){
+                        System.err.println("Command not recognized.");
+                    }
                 line = scanner.nextLine();
             }
         }catch(Exception e){
             e.printStackTrace();
         }
     }
+
 }

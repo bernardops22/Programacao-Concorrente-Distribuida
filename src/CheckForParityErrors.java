@@ -33,7 +33,8 @@ public class CheckForParityErrors extends Thread {
             while (true)
                 for(int i = init; i < fin; i++) {
                     if (!node.fileContent[i].isParityOk()) {
-                        if (lock.tryLock()) {
+                        boolean canLock = lock.tryLock();
+                        if(canLock) {
                             lock.lock();
                             node.startErrorCorrection(i);
                             node.correctError(i);
@@ -42,7 +43,7 @@ public class CheckForParityErrors extends Thread {
                     }
                 }
         } catch (IOException | InterruptedException | ClassNotFoundException e) {
-            e.printStackTrace();
+            //...
         }
     }
 }

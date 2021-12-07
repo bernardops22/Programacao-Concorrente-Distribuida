@@ -1,5 +1,8 @@
 import java.io.Serializable;
 
+/**
+ * @author bernardosantos
+ */
 public class ByteBlockRequest implements Serializable {
 
     public final int startIndex, length;
