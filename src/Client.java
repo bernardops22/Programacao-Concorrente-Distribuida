@@ -6,6 +6,9 @@ import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 
+/**
+ * @author bernardosantos
+ */
 public class Client {
     private ObjectInputStream in;
     private ObjectOutputStream out;
@@ -19,6 +22,7 @@ public class Client {
             out = new ObjectOutputStream(socket.getOutputStream());
         }catch(IOException e){
             System.err.println("Problem in the arguments: Directory port and address must exist");
+            e.printStackTrace();
             return;
         }
         addFrameContent();

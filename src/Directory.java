@@ -5,6 +5,9 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * @author bernardosantos
+ */
 public class Directory {
 
     private final ServerSocket serverSocket;
@@ -20,6 +23,7 @@ public class Directory {
                 new Directory(Integer.parseInt(args[0])).serve();
             }catch(BindException e){
                 System.err.println("Address already in use: " + args[0]);
+                e.printStackTrace();
             }
         else
             throw new RuntimeException("Port number must be the first and only argument");
@@ -33,6 +37,7 @@ public class Directory {
                 new DealWithNode(clientSocket).start();
             }catch(IOException e){
                 System.err.println("Error accepting client connection to the directory");
+                e.printStackTrace();
             }
         }
     }
@@ -59,11 +64,9 @@ public class Directory {
     }
 
     private synchronized boolean isNodeEnrolled(String clientAddress, String clientPort){
-        for(String node: nodes){
-            if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
+        for(String node: nodes)
+            if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort))
                 return true;
-            }
-        }
         return false;
     }
 
@@ -118,6 +121,7 @@ public class Directory {
                 }
             } catch (IOException e) {
                 System.err.println("Error establishing communication channel with the client.");
+                e.printStackTrace();
             }finally {
                 if(isConnected)
                     disconnectClient(clientAddress, clientPort);
