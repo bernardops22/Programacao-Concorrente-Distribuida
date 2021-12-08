@@ -29,16 +29,16 @@ public class DealWithRequest extends Thread{
             Socket socket = new Socket(inAddress, inPort);
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-            while (node.queue.size() != 0) {
-                request = node.queue.take();
+            while (node.getQueue().size() != 0) {
+                request = node.getQueue().take();
                 out.writeObject(request);
                 try {
                     CloudByte[] block = (CloudByte[]) in.readObject();
                     for (int i = 0; i < request.getLength(); i++)
-                        node.fileContent[i + request.getStartIndex()] = block[i];
+                        node.getFileContent()[i + request.getStartIndex()] = block[i];
                     numBlocks++;
                 }catch(NullPointerException e){
-                    node.queue.add(request);
+                    node.getQueue().add(request);
                     System.err.println("Parity error. Last request added to the queue: " + request);
                     e.printStackTrace();
                 }
@@ -49,7 +49,7 @@ public class DealWithRequest extends Thread{
         } catch (IOException | InterruptedException | ClassNotFoundException e) {
             System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
             if(request != null) {
-                node.queue.add(request);
+                node.getQueue().add(request);
                 System.err.println("Last request added to the queue : " + request);
             }
         }

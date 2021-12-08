@@ -2,6 +2,7 @@ import java.io.*;
 import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,20 +22,25 @@ public class Directory {
         if (args.length == 1)
             try {
                 new Directory(Integer.parseInt(args[0])).serve();
-            }catch(BindException e){
-                System.err.println("Address already in use: " + args[0]);
-                e.printStackTrace();
+            } catch(BindException e){
+                throw new BindException("Address already in use: " + args[0]);
+            } catch (NumberFormatException e1){
+                throw new NumberFormatException("Inserted port invalid: " + args[0]);
             }
         else
             throw new RuntimeException("Port number must be the first and only argument");
     }
 
+    /**
+     * Através deste método, por cada cliente que se tentar inscrever é iniciada
+     * uma thread DealWithClient para que as ligações com o mesmo sejam geridas
+     */
     private void serve(){
         System.err.println("Initiating service...");
         while (true){
             try {
                 Socket clientSocket = serverSocket.accept();
-                new DealWithNode(clientSocket).start();
+                new DealWithClient(this,clientSocket).start();
             }catch(IOException e){
                 System.err.println("Error accepting client connection to the directory");
                 e.printStackTrace();
@@ -42,18 +48,28 @@ public class Directory {
         }
     }
 
-    private synchronized void addClient(String clientAddress, String clientPort){
+    /**
+     * Neste método o cliente que se regista é adicionado à lista de clientes
+     */
+    synchronized void addClient(String clientAddress, String clientPort){
         nodes.add(clientAddress + " " + clientPort);
         System.err.println("Client enrolled: " + clientAddress + " " + clientPort);
     }
 
-    private synchronized void sendNodeList(PrintWriter out){
+    /**
+     * Neste método é enviado em formato de texto o conjunto de todos os clientes na lista
+     * de clientes inscritos no diretório
+     */
+    synchronized void sendClientList(PrintWriter out){
         for (String node : nodes)
             out.println("node " + node);
         out.println("end");
     }
 
-    private synchronized void disconnectClient(String clientAddress, String clientPort){
+    /**
+     * O cliente que tiver algum problema é removido da lista de clientes inscritos
+     */
+    synchronized void disconnectClient(String clientAddress, String clientPort){
         for(String node: nodes){
             if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort)){
                 nodes.remove(node);
@@ -63,69 +79,15 @@ public class Directory {
         }
     }
 
-    private synchronized boolean isNodeEnrolled(String clientAddress, String clientPort){
+    /**
+     * Este método verifica se o cliente em causa está inscrito na lista
+     * @return Retorna verdadeiro se o cliente estiver inscrito. Caso contrário
+     * retorna falso
+     */
+    synchronized boolean isClientEnrolled(String clientAddress, String clientPort){
         for(String node: nodes)
             if(node.split(" ")[0].equals(clientAddress) && node.split(" ")[1].equals(clientPort))
                 return true;
         return false;
-    }
-
-    private class DealWithNode extends Thread{
-        private final BufferedReader in;
-        private final PrintWriter out;
-        private String clientAddress, clientPort;
-
-        public DealWithNode(Socket socket) throws IOException {
-            in = new BufferedReader(new InputStreamReader(
-                    socket.getInputStream()));
-            out = new PrintWriter(new BufferedWriter(
-                    new OutputStreamWriter(socket.getOutputStream())),
-                    true);
-        }
-
-        @Override
-        public void run(){
-            boolean isConnected = false;
-            try {
-                while(true) {
-                    String request = in.readLine();
-                    if(request == null){
-                        break;
-                    }
-                    String[] requestContent = request.split(" ");
-                    switch (requestContent[0]){
-                        case "INSC":
-                            if(requestContent.length == 3) {
-                                this.clientAddress = requestContent[1];
-                                this.clientPort = requestContent[2];
-                                if(!isNodeEnrolled(clientAddress, clientPort)){
-                                    out.println("true");
-                                    addClient(clientAddress, clientPort);
-                                    isConnected = true;
-                                } else{
-                                    out.println("false");
-                                    isConnected = false;
-                                }
-                            }
-                            else
-                                System.err.println("Error receiving client enrollment.");
-                            break;
-                        case "nodes":
-                            System.err.println("New message received: " + request);
-                            sendNodeList(out);
-                            break;
-                        default:
-                            System.err.println("Message not understood: " + request);
-                            break;
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("Error establishing communication channel with the client.");
-                e.printStackTrace();
-            }finally {
-                if(isConnected)
-                    disconnectClient(clientAddress, clientPort);
-            }
-        }
     }
 }

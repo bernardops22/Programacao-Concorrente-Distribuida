@@ -29,15 +29,10 @@ public class StorageNode {
     private BufferedReader in;
     private PrintWriter out;
 
-    public final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
+    private final CloudByte[] fileContent = new CloudByte[FILE_SIZE];
     private final List<String> nodes = new ArrayList<>();
-    private final BlockingQueue<CloudByte> correction = new ArrayBlockingQueue<>(2);
-    public final BlockingQueue<ByteBlockRequest> queue = new ArrayBlockingQueue<>(MAX_BLOCKS);
+    private final BlockingQueue<ByteBlockRequest> queue = new ArrayBlockingQueue<>(MAX_BLOCKS);
 
-    /**
-     * Construtor da classe capaz de receber até quatro argumentos.
-     * O argumento path pode ser null, mas a verificação do mesmo é feita no método runNode.
-     */
     public StorageNode(InetAddress serverAddress, int senderPort, int receiverPort, String path){
         this.serverAddress = serverAddress;
         this.senderPort = senderPort;
@@ -45,11 +40,14 @@ public class StorageNode {
         this.path = path;
     }
 
-    /**
-     * Assim que o código inicia temos dois casos.
-     * O node tem acesso inicial ao ficheiro bin
-     * O node não tem acesso inicial ao ficheiro bin
-     */
+    public BlockingQueue<ByteBlockRequest> getQueue() {
+        return queue;
+    }
+
+    public CloudByte[] getFileContent(){
+        return fileContent;
+    }
+
     public static void main(String[] args) throws UnknownHostException {
         try {
             if (args.length == 3)
@@ -80,12 +78,12 @@ public class StorageNode {
                 return;
             }
             if (path!=null)
-                getFileContent();
+                downloadFileContent();
             else {
-                getNodesList();
+                setNodeList();
                 if(nodes.size() != 0) {
                     createQueue();
-                    getContentFromNodes();
+                    receiveFileFromNodes();
                 }
                 else{
                     System.err.println("No nodes available beside yours.");
@@ -131,7 +129,7 @@ public class StorageNode {
      * Esta função apenas é instanciada caso o caminho para o ficheiro bin for dado e o
      * nó se tenha conseguido inscrever no diretório.
      */
-    private void getFileContent() throws IOException {
+    private void downloadFileContent() throws IOException {
         try {
             byte[] fileContentsTemp = Files.readAllBytes(new File(path).toPath());
             if (fileContentsTemp.length != FILE_SIZE) throw new IOException();
@@ -150,7 +148,7 @@ public class StorageNode {
      * nó se tenha conseguido inscrever no diretório.
      * Nota: Método instanciado pelo runNode().
      */
-    private void getNodesList() throws IOException {
+    private void setNodeList() throws IOException {
         nodes.clear();
         System.err.println("Querying directory for other nodes...");
         out.println("nodes");
@@ -184,7 +182,7 @@ public class StorageNode {
      * após ter sido atualizada a lista de pedidos a fazer aos outros nós.
      * Nota: Método instanciado pelo runNode().
      */
-    private void getContentFromNodes() throws ClassNotFoundException, InterruptedException {
+    private void receiveFileFromNodes() throws ClassNotFoundException, InterruptedException {
         final long time = System.currentTimeMillis();
         CountDownLatch cdl = new CountDownLatch(nodes.size());
         for (String node : nodes) {
@@ -251,14 +249,14 @@ public class StorageNode {
     }
 
     /**
-     * Método que inicia threads de pesquisa do valor real do CloudByte que contém o erro.
+     * Método que adiciona o “byte” em causa à lista de pedidos e despoleta a correção do erro
      * Limitação: Apenas é possível corrigir um erro de cada vez.
      * Nota: Método instanciado pela classe CheckForParityErrors caso seja detetado algum erro.
      */
-    public void startErrorCorrection(int position) throws IOException, ClassNotFoundException, InterruptedException {
+    void triggerErrorCorrection(int position) throws IOException, ClassNotFoundException, InterruptedException {
         try {
             System.err.println("Data Maintenance: Error was detected at " + position + ": " + fileContent[position]);
-            getNodesList();
+            setNodeList();
             if (nodes.size() >= 2) {
                 for (int i = 0; i != nodes.size(); i++)
                     queue.add(new ByteBlockRequest(position, 1));
@@ -279,8 +277,9 @@ public class StorageNode {
      * Limitação: Pressupõe-se que os “bytes” recebidos são sempre iguais.
      * Nota: Método instanciado pela thread CheckForParityErrors.
      */
-    public void correctError(int position) throws InterruptedException {
+    void correctError(int position) throws InterruptedException {
         CountDownLatch cdl = new CountDownLatch(2);
+        BlockingQueue<CloudByte> correction = new ArrayBlockingQueue<>(nodes.size());
         for (String node : nodes) {
             System.err.println("Launching correction thread: " + node);
             new DealWithError(this, node.split(" ")[1], Integer.parseInt(node.split(" ")[2]), cdl, correction).start();
@@ -290,8 +289,8 @@ public class StorageNode {
         CloudByte b2 = correction.take();
         if(b1.equals(b2)) {
             fileContent[position] = b1;
-            System.err.println("Corrected to: " + fileContent[position]);
-            System.err.println("Continuing error analysis...");
+            System.err.println("Corrected to: " + fileContent[position]+
+                    "\nContinuing error analysis...");
         }
     }
 
@@ -299,7 +298,7 @@ public class StorageNode {
      * Injeção local do erro para posterior correção pelas threads de procura de erros.
      * Nota: Método instanciado na classe UserInput
      */
-    public void injectError(int position){
+    void injectError(int position){
         if(position >= 0 && position <= 999999) {
             fileContent[position].makeByteCorrupt();
             System.err.println("Error injected: " + fileContent[position]);

@@ -16,7 +16,6 @@ public class DealWithError extends Thread {
     private final CountDownLatch cdl;
     private final BlockingQueue<CloudByte> correction;
 
-
     public DealWithError(StorageNode node, String inAddress, int inPort, CountDownLatch cdl, BlockingQueue<CloudByte> correction) {
         this.node = node;
         this.inAddress = inAddress;
@@ -32,14 +31,14 @@ public class DealWithError extends Thread {
             Socket socket = new Socket(inAddress, inPort);
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-            request = node.queue.take();
+            request = node.getQueue().take();
             out.writeObject(request);
             try {
                 CloudByte[] b = (CloudByte[]) in.readObject();
                 correction.add(b[0]);
                 cdl.countDown();
             }catch(NullPointerException e){
-                node.queue.add(request);
+                node.getQueue().add(request);
                 System.err.println("Parity error. Last request added to the queue: " + request);
                 e.printStackTrace();
             }
@@ -49,7 +48,7 @@ public class DealWithError extends Thread {
         } catch (IOException | InterruptedException | ClassNotFoundException e) {
             System.err.println("Unable to connect to desired socket: " + inAddress + " " + inPort);
             if(request != null) {
-                node.queue.add(request);
+                node.getQueue().add(request);
                 System.err.println("Last request added to the queue : " + request);
             }
         }

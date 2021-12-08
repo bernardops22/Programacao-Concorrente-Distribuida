@@ -19,7 +19,7 @@ public class CheckForParityErrors extends Thread {
     @Override
     public void run() {
         try {
-            int fileLength = node.fileContent.length;
+            int fileLength = node.getFileContent().length;
             int init;
             int fin;
             if(threadNumber == 0){
@@ -32,18 +32,19 @@ public class CheckForParityErrors extends Thread {
             }
             while (true)
                 for(int i = init; i < fin; i++) {
-                    if (!node.fileContent[i].isParityOk()) {
+                    //sleep(0,1);
+                    if (!node.getFileContent()[i].isParityOk()) {
                         boolean canLock = lock.tryLock();
                         if(canLock) {
                             lock.lock();
-                            node.startErrorCorrection(i);
+                            node.triggerErrorCorrection(i);
                             node.correctError(i);
                             lock.unlock();
                         }
                     }
                 }
         } catch (IOException | InterruptedException | ClassNotFoundException e) {
-            //...
+            e.printStackTrace();
         }
     }
 }
